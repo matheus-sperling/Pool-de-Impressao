@@ -1,233 +1,284 @@
 #include <iostream>
 #include <vector>
-#include <queue>
+#include <string>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <queue>
 #include <chrono>
-#include <random>
+#include <atomic>
+#include <unordered_map>
 #include <iomanip>
 #include <sstream>
-#include <ctime>
-#include <limits>
 
-struct RequisicaoImpressao {
-    int idProcesso;
-    std::string nomeDocumento;
-    int paginas;
-    int prioridade;
-    std::chrono::system_clock::time_point horaRequisicao;
-    std::chrono::system_clock::time_point horaImpressao;
-    int idImpressora;
+// Estrutura de pedidos de impressao com prioridade
+struct Pedido {
+    int id; // Identificador unico
+    std::string nome_documento;
+    int num_paginas;
+    int prioridade; // 1 a 5 (5 mais alta)
+    int id_processo;
+    std::chrono::system_clock::time_point hora_solicitacao;
 
-    bool operator<(const RequisicaoImpressao& outra) const {
-        return prioridade < outra.prioridade;
+    // Operador de comparacao para a priority_queue
+    bool operator<(const Pedido& other) const {
+        // Prioridade maior tem precedencia
+        return prioridade < other.prioridade;
     }
 };
 
-class PoolImpressoras {
-private:
-    std::vector<RequisicaoImpressao> buffer;
-    std::mutex mtx;
-    std::condition_variable nao_vazio;
-    size_t tamanhoMaximoBuffer;
-    bool simulacaoRodando;
-    std::vector<int> estatisticasImpressoras;
-    std::vector<RequisicaoImpressao> trabalhosConcluidos;
-
-public:
-    std::string obterTimestamp() {
-        auto agora = std::chrono::system_clock::now();
-        auto tempo = std::chrono::system_clock::to_time_t(agora);
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&tempo), "%Y-%m-%d %H:%M:%S");
-        return ss.str();
-    }
-
-public:
-    PoolImpressoras(size_t tamanhoBuffer, int numImpressoras)
-        : tamanhoMaximoBuffer(tamanhoBuffer), simulacaoRodando(true), estatisticasImpressoras(numImpressoras, 0) {}
-
-    bool adicionarRequisicao(RequisicaoImpressao requisicao) {
-        std::unique_lock<std::mutex> lock(mtx);
-        if (buffer.size() >= tamanhoMaximoBuffer) {
-            std::cout << "[" << obterTimestamp() << "] [ALERTA] Buffer cheio. Requisicao descartada: "
-                      << requisicao.nomeDocumento << "\n";
-            return false;
-        }
-        buffer.push_back(requisicao);
-        std::push_heap(buffer.begin(), buffer.end());
-        std::cout << "[" << obterTimestamp() << "] [REQUISICAO] Adicionada: " << requisicao.nomeDocumento
-                  << " (Prioridade: " << requisicao.prioridade << ", Paginas: " << requisicao.paginas << ")\n";
-        nao_vazio.notify_one();
-        return true;
-    }
-
-    bool obterRequisicao(RequisicaoImpressao& requisicao) {
-        std::unique_lock<std::mutex> lock(mtx);
-        nao_vazio.wait(lock, [this] { return !buffer.empty() || !simulacaoRodando; });
-
-        if (!simulacaoRodando && buffer.empty()) {
-            return false;
-        }
-
-        std::pop_heap(buffer.begin(), buffer.end());
-        requisicao = buffer.back();
-        buffer.pop_back();
-        std::cout << "[" << obterTimestamp() << "] [REQUISICAO] Obtida para impressao: "
-                  << requisicao.nomeDocumento << " (Prioridade: " << requisicao.prioridade << ")\n";
-        return true;
-    }
-
-    void adicionarTrabalhoConcluido(const RequisicaoImpressao& requisicao) {
-        std::lock_guard<std::mutex> lock(mtx);
-        trabalhosConcluidos.push_back(requisicao);
-        estatisticasImpressoras[requisicao.idImpressora] += requisicao.paginas;
-        std::cout << "[" << obterTimestamp() << "] [IMPRESSORA] Impressao concluida: " << requisicao.nomeDocumento
-                  << " pela Impressora " << requisicao.idImpressora + 1
-                  << " (Paginas: " << requisicao.paginas << ")\n";
-    }
-
-    void pararSimulacao() {
-        std::lock_guard<std::mutex> lock(mtx);
-        simulacaoRodando = false;
-        nao_vazio.notify_all();
-    }
-
-    void imprimirRelatorio() {
-        std::cout << "\n=== RELATORIO FINAL ===\n\n";
-
-        for (size_t i = 0; i < estatisticasImpressoras.size(); ++i) {
-            std::cout << "Impressora " << i + 1 << ": " << estatisticasImpressoras[i] << " paginas\n";
-        }
-
-        std::cout << "\nDocumentos processados:\n";
-        for (const auto& trabalho : trabalhosConcluidos) {
-            auto horaRequisicao = std::chrono::system_clock::to_time_t(trabalho.horaRequisicao);
-            auto horaImpressao = std::chrono::system_clock::to_time_t(trabalho.horaImpressao);
-            auto duracao = std::chrono::duration_cast<std::chrono::milliseconds>(trabalho.horaImpressao - trabalho.horaRequisicao).count();
-
-            std::stringstream horaReqStream, horaImpStream;
-            horaReqStream << std::put_time(std::localtime(&horaRequisicao), "%Y-%m-%d %H:%M:%S");
-            horaImpStream << std::put_time(std::localtime(&horaImpressao), "%Y-%m-%d %H:%M:%S");
-
-            std::cout << "--------------------------------------------------------\n";
-            std::cout << "Documento:     " << trabalho.nomeDocumento << "\n";
-            std::cout << "Processo:      " << trabalho.idProcesso << "\n";
-            std::cout << "Paginas:       " << trabalho.paginas << "\n";
-            std::cout << "Prioridade:    " << trabalho.prioridade << "\n";
-            std::cout << "Hora Req.:     " << horaReqStream.str() << "\n";
-            std::cout << "Hora Imp.:     " << horaImpStream.str() << "\n";
-            std::cout << "Tempo (ms):    " << duracao << "\n";
-        }
-
-        std::cout << "\n[LOG] Fim da simulacao. Todos os documentos foram processados.\n";
-    }
+// Estrutura para registro de impressao
+struct RegistroImpressao {
+    std::string nome_documento;
+    int num_paginas;
+    int id_processo;
+    int id_impressora;
+    std::chrono::system_clock::time_point hora_solicitacao;
+    std::chrono::system_clock::time_point hora_inicio;
+    std::chrono::milliseconds tempo_total;
 };
 
-bool validarEntrada(int& entrada) {
-    std::cin >> entrada;
-    if (std::cin.fail() || entrada < 1) {
-        std::cin.clear();
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        return false;
-    }
-    return true;
+// Variaveis globais
+std::priority_queue<Pedido> buffer;
+std::mutex buffer_mutex;
+std::condition_variable buffer_cond_var;
+std::atomic<bool> encerrar(false);
+std::vector<RegistroImpressao> registros;
+std::mutex registro_mutex;
+std::unordered_map<int, int> paginas_por_impressora;
+std::atomic<int> pedido_id_counter(0);
+
+// Funcao para converter tempo para string
+std::string time_point_to_string(const std::chrono::system_clock::time_point& tp) {
+    std::time_t t = std::chrono::system_clock::to_time_t(tp);
+    std::tm tm;
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%H:%M:%S");
+    return oss.str();
 }
 
-void threadImpressora(PoolImpressoras& pool, int idImpressora, int tempoPorPagina) {
+// Funcao para coletar entradas do usuario
+void coletar_dados(int& num_processos, int& num_impressoras, int& capacidade_buffer,
+                   int& tempo_por_pagina_ms, int& max_pedidos, int& num_paginas) {
+    std::cout << "Bem-vindo ao Simulador de Pool de Impressao!\n";
+    std::cout << "Por favor, insira os seguintes parametros:\n";
+
     while (true) {
-        RequisicaoImpressao requisicao;
-        if (!pool.obterRequisicao(requisicao)) {
-            break;
-        }
-
-        requisicao.idImpressora = idImpressora;
-        requisicao.horaImpressao = std::chrono::system_clock::now();
-
-        std::cout << "[" << pool.obterTimestamp() << "] [IMPRESSORA] Impressora " << idImpressora + 1
-                  << " processando " << requisicao.nomeDocumento
-                  << " (Paginas: " << requisicao.paginas << ")\n";
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(tempoPorPagina * requisicao.paginas));
-        pool.adicionarTrabalhoConcluido(requisicao);
+        std::cout << "1. Numero de processos (minimo 1): ";
+        std::cin >> num_processos;
+        if (num_processos > 0) break;
+        std::cout << "Por favor, insira um valor valido.\n";
     }
 
-    std::cout << "[" << pool.obterTimestamp() << "] [IMPRESSORA] Impressora " << idImpressora + 1
-              << " aguardando novas requisicoes.\n";
+    while (true) {
+        std::cout << "2. Numero de impressoras (minimo 1): ";
+        std::cin >> num_impressoras;
+        if (num_impressoras > 0) break;
+        std::cout << "Por favor, insira um valor valido.\n";
+    }
+
+    while (true) {
+        std::cout << "3. Capacidade maxima do buffer (minimo 1): ";
+        std::cin >> capacidade_buffer;
+        if (capacidade_buffer > 0) break;
+        std::cout << "Por favor, insira um valor valido.\n";
+    }
+
+    while (true) {
+        std::cout << "4. Tempo de impressao por pagina (em ms, minimo 10): ";
+        std::cin >> tempo_por_pagina_ms;
+        if (tempo_por_pagina_ms >= 10) break;
+        std::cout << "Por favor, insira um valor valido.\n";
+    }
+
+    while (true) {
+        std::cout << "5. Numero maximo de pedidos por processo (minimo 1): ";
+        std::cin >> max_pedidos;
+        if (max_pedidos > 0) break;
+        std::cout << "Por favor, insira um valor valido.\n";
+    }
+
+    while (true) {
+        std::cout << "6. Numero de paginas por pedido (minimo 1): ";
+        std::cin >> num_paginas;
+        if (num_paginas > 0) break;
+        std::cout << "Por favor, insira um valor valido.\n";
+    }
+
+    std::cout << "\nParametros configurados com sucesso!\n";
 }
 
-void threadProcesso(PoolImpressoras& pool, int idProcesso) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> paginas_dist(1, 20);
-    std::uniform_int_distribution<> prioridade_dist(1, 5);
-    std::uniform_int_distribution<> atraso_dist(1000, 5000);
+// Funcao para gerar relatorio final
+void gerar_relatorio() {
+    std::lock_guard<std::mutex> lock(registro_mutex);
 
-    for (int i = 1; i <= 5; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(atraso_dist(gen)));
+    std::cout << "\n=== Relatorio Final ===\n";
 
-        RequisicaoImpressao requisicao;
-        requisicao.idProcesso = idProcesso;
-        requisicao.nomeDocumento = "Doc_P" + std::to_string(idProcesso) + "_" + std::to_string(i);
-        requisicao.paginas = paginas_dist(gen);
-        requisicao.prioridade = prioridade_dist(gen);
-        requisicao.horaRequisicao = std::chrono::system_clock::now();
+    if (registros.empty()) {
+        std::cout << "Nenhum documento foi impresso.\n";
+        return;
+    }
 
-        if (!pool.adicionarRequisicao(requisicao)) {
-            std::cout << "[" << pool.obterTimestamp() << "] [ALERTA] Buffer cheio. Requisicao descartada: "
-                      << requisicao.nomeDocumento << "\n";
-        }
+    std::cout << "\nQuantidade total de paginas impressas por impressora:\n";
+    for (const auto& [impressora, paginas] : paginas_por_impressora) {
+        std::cout << " - Impressora " << impressora << ": " << paginas << " paginas\n";
+    }
+
+    std::cout << "\nLista de documentos impressos:\n";
+    std::cout << std::left << std::setw(20) << "Documento"
+              << std::setw(10) << "Paginas"
+              << std::setw(10) << "Processo"
+              << std::setw(15) << "Solicitacao"
+              << std::setw(15) << "Inicio"
+              << std::setw(15) << "Duracao(ms)"
+              << std::setw(12) << "Impressora\n";
+
+    for (const auto& registro : registros) {
+        std::cout << std::left << std::setw(20) << registro.nome_documento
+                  << std::setw(10) << registro.num_paginas
+                  << std::setw(10) << registro.id_processo
+                  << std::setw(15) << time_point_to_string(registro.hora_solicitacao)
+                  << std::setw(15) << time_point_to_string(registro.hora_inicio)
+                  << std::setw(15) << registro.tempo_total.count()
+                  << std::setw(12) << registro.id_impressora << "\n";
     }
 }
 
 int main() {
-    int numProcessos, numImpressoras, tamanhoBuffer, tempoPorPagina;
+    int num_processos, num_impressoras, capacidade_buffer, tempo_por_pagina_ms, max_pedidos, num_paginas;
 
-    std::cout << "Numero de processos (>= 1): ";
-    while (!validarEntrada(numProcessos)) {
-        std::cout << "Entrada invalida. Insira novamente: ";
+    coletar_dados(num_processos, num_impressoras, capacidade_buffer, tempo_por_pagina_ms, max_pedidos, num_paginas);
+
+    // Inicializar contagem de paginas por impressora
+    for (int i = 1; i <= num_impressoras; ++i) {
+        paginas_por_impressora[i] = 0;
     }
 
-    std::cout << "Numero de impressoras (>= 1): ";
-    while (!validarEntrada(numImpressoras)) {
-        std::cout << "Entrada invalida. Insira novamente: ";
+    std::vector<std::thread> processos, impressoras;
+
+    // Estrutura para armazenar prioridades definidas pelo usuario
+    // prioridade_por_processo[processo][pedido] = prioridade
+    std::vector<std::vector<int>> prioridade_por_processo(num_processos, std::vector<int>(max_pedidos, 1));
+
+    // Coletar prioridades manualmente
+    std::cout << "\nDefina a prioridade para cada pedido de impressao (1 a 5, onde 5 e a mais alta):\n";
+    for (int i = 0; i < num_processos; ++i) {
+        std::cout << "Processo " << (i + 1) << ":\n";
+        for (int j = 0; j < max_pedidos; ++j) {
+            int prioridade;
+            while (true) {
+                std::cout << "  Pedido " << j + 1 << ": ";
+                std::cin >> prioridade;
+                if (prioridade >= 1 && prioridade <= 5) break;
+                std::cout << "  Prioridade invalida. Insira um valor entre 1 e 5.\n";
+            }
+            prioridade_por_processo[i][j] = prioridade;
+        }
     }
 
-    std::cout << "Tamanho do buffer (>= 1): ";
-    while (!validarEntrada(tamanhoBuffer)) {
-        std::cout << "Entrada invalida. Insira novamente: ";
+    // Variavel para monitorar se todos os pedidos foram adicionados
+    std::atomic<int> pedidos_adicionados(0);
+
+    // Thread para impressoras
+    for (int i = 1; i <= num_impressoras; ++i) {
+        impressoras.emplace_back([&, i]() {
+            while (true) {
+                Pedido pedido;
+
+                {
+                    std::unique_lock<std::mutex> lock(buffer_mutex);
+                    buffer_cond_var.wait(lock, [&]() { return !buffer.empty() || encerrar; });
+
+                    if (buffer.empty() && encerrar) break;
+
+                    if (!buffer.empty()) {
+                        pedido = buffer.top();
+                        buffer.pop();
+                        std::cout << "Pedido removido: " << pedido.nome_documento
+                                  << " (ID: " << pedido.id << ", Prioridade: " << pedido.prioridade << ")\n";
+                    } else {
+                        continue;
+                    }
+                }
+
+                // Processar o pedido
+                auto inicio = std::chrono::system_clock::now();
+                std::this_thread::sleep_for(std::chrono::milliseconds(pedido.num_paginas * tempo_por_pagina_ms));
+                auto fim = std::chrono::system_clock::now();
+
+                RegistroImpressao registro{
+                    pedido.nome_documento,
+                    pedido.num_paginas,
+                    pedido.id_processo,
+                    i,
+                    pedido.hora_solicitacao,
+                    inicio,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(fim - inicio)
+                };
+
+                {
+                    std::lock_guard<std::mutex> lock(registro_mutex);
+                    registros.push_back(registro);
+                    paginas_por_impressora[i] += pedido.num_paginas;
+                }
+            }
+        });
     }
 
-    std::cout << "Tempo por pagina (ms, >= 1): ";
-    while (!validarEntrada(tempoPorPagina)) {
-        std::cout << "Entrada invalida. Insira novamente: ";
+    // Thread para processos
+    for (int i = 1; i <= num_processos; ++i) {
+        processos.emplace_back([&, i]() {
+            for (int j = 0; j < max_pedidos; ++j) {
+                Pedido pedido{
+                    pedido_id_counter.fetch_add(1),
+                    "Documento_" + std::to_string(i) + "_" + std::to_string(j),
+                    num_paginas,
+                    prioridade_por_processo[i - 1][j],
+                    i,
+                    std::chrono::system_clock::now()
+                };
+
+                {
+                    std::unique_lock<std::mutex> lock(buffer_mutex);
+                    buffer_cond_var.wait(lock, [&]() { return buffer.size() < static_cast<size_t>(capacidade_buffer) || encerrar; });
+
+                    if (encerrar) {
+                        return;
+                    }
+
+                    if (buffer.size() < static_cast<size_t>(capacidade_buffer)) {
+                        buffer.push(pedido);
+                        std::cout << "Pedido adicionado: " << pedido.nome_documento
+                                  << " (ID: " << pedido.id << ", Prioridade: " << pedido.prioridade << ")\n";
+                        pedidos_adicionados++;
+                    } else {
+                        std::cout << "Buffer cheio. Pedido descartado: " << pedido.nome_documento
+                                  << " (ID: " << pedido.id << ")\n";
+                        // Opcional: Implementar fila de espera ou logica adicional
+                    }
+                }
+                buffer_cond_var.notify_all();
+                std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Tempo entre pedidos
+            }
+        });
     }
 
-    PoolImpressoras pool(tamanhoBuffer, numImpressoras);
-    std::vector<std::thread> impressoras, processos;
+    // Aguardar conclusao dos processos
+    for (auto& t : processos) t.join();
 
-    for (int i = 0; i < numImpressoras; ++i) {
-        impressoras.emplace_back(threadImpressora, std::ref(pool), i, tempoPorPagina);
-    }
+    // Sinalizar para as impressoras que devem encerrar
+    encerrar = true;
+    buffer_cond_var.notify_all();
 
-    for (int i = 0; i < numProcessos; ++i) {
-        processos.emplace_back(threadProcesso, std::ref(pool), i + 1);
-    }
+    // Aguardar conclusao das impressoras
+    for (auto& t : impressoras) t.join();
 
-    for (auto& p : processos) {
-        p.join();
-    }
-
-    std::this_thread::sleep_for(std::chrono::seconds(30));
-
-    pool.pararSimulacao();
-
-    for (auto& p : impressoras) {
-        p.join();
-    }
-
-    pool.imprimirRelatorio();
+    gerar_relatorio();
 
     return 0;
 }
