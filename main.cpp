@@ -11,23 +11,23 @@
 #include <iomanip>
 #include <sstream>
 
-// Estrutura de pedidos de impressao com prioridade
+// Estrutura de pedidos de impressão com prioridade
 struct Pedido {
-    int id; // Identificador unico
+    int id; // Identificador único
     std::string nome_documento;
     int num_paginas;
     int prioridade; // 1 a 5 (5 mais alta)
     int id_processo;
     std::chrono::system_clock::time_point hora_solicitacao;
 
-    // Operador de comparacao para a priority_queue
+    // Operador de comparação para a priority_queue
     bool operator<(const Pedido& other) const {
-        // Prioridade maior tem precedencia
+        // Prioridade maior tem precedência
         return prioridade < other.prioridade;
     }
 };
 
-// Estrutura para registro de impressao
+// Estrutura para registro de impressão
 struct RegistroImpressao {
     std::string nome_documento;
     int num_paginas;
@@ -38,7 +38,7 @@ struct RegistroImpressao {
     std::chrono::milliseconds tempo_total;
 };
 
-// Variaveis globais
+// Variáveis globais
 std::priority_queue<Pedido> buffer;
 std::mutex buffer_mutex;
 std::condition_variable buffer_cond_var;
@@ -48,21 +48,21 @@ std::mutex registro_mutex;
 std::unordered_map<int, int> paginas_por_impressora;
 std::atomic<int> pedido_id_counter(0);
 
-// Funcao para converter tempo para string
+// Função para converter tempo para string
 std::string time_point_to_string(const std::chrono::system_clock::time_point& tp) {
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
     std::tm tm;
 #ifdef _WIN32
     localtime_s(&tm, &t);
 #else
-    localtime_r(&t, &tm);
+    localtime_r(&tm, &t);
 #endif
     std::ostringstream oss;
     oss << std::put_time(&tm, "%H:%M:%S");
     return oss.str();
 }
 
-// Funcao para coletar entradas do usuario
+// Função para coletar entradas do usuário
 void coletar_dados(int& num_processos, int& num_impressoras, int& capacidade_buffer,
                    int& tempo_por_pagina_ms, int& max_pedidos, int& num_paginas) {
     std::cout << "Bem-vindo ao Simulador de Pool de Impressao!\n";
@@ -113,7 +113,7 @@ void coletar_dados(int& num_processos, int& num_impressoras, int& capacidade_buf
     std::cout << "\nParametros configurados com sucesso!\n";
 }
 
-// Funcao para gerar relatorio final
+// Função para gerar relatório final
 void gerar_relatorio() {
     std::lock_guard<std::mutex> lock(registro_mutex);
 
@@ -154,14 +154,14 @@ int main() {
 
     coletar_dados(num_processos, num_impressoras, capacidade_buffer, tempo_por_pagina_ms, max_pedidos, num_paginas);
 
-    // Inicializar contagem de paginas por impressora
+    // Inicializar contagem de páginas por impressora
     for (int i = 1; i <= num_impressoras; ++i) {
         paginas_por_impressora[i] = 0;
     }
 
     std::vector<std::thread> processos, impressoras;
 
-    // Estrutura para armazenar prioridades definidas pelo usuario
+    // Estrutura para armazenar prioridades definidas pelo usuário
     // prioridade_por_processo[processo][pedido] = prioridade
     std::vector<std::vector<int>> prioridade_por_processo(num_processos, std::vector<int>(max_pedidos, 1));
 
@@ -181,7 +181,7 @@ int main() {
         }
     }
 
-    // Variavel para monitorar se todos os pedidos foram adicionados
+    // Variável para monitorar se todos os pedidos foram adicionados
     std::atomic<int> pedidos_adicionados(0);
 
     // Thread para impressoras
@@ -259,7 +259,7 @@ int main() {
                     } else {
                         std::cout << "Buffer cheio. Pedido descartado: " << pedido.nome_documento
                                   << " (ID: " << pedido.id << ")\n";
-                        // Opcional: Implementar fila de espera ou logica adicional
+                        // Opcional: Implementar fila de espera ou lógica adicional
                     }
                 }
                 buffer_cond_var.notify_all();
@@ -268,14 +268,14 @@ int main() {
         });
     }
 
-    // Aguardar conclusao dos processos
+    // Aguardar conclusão dos processos
     for (auto& t : processos) t.join();
 
     // Sinalizar para as impressoras que devem encerrar
     encerrar = true;
     buffer_cond_var.notify_all();
 
-    // Aguardar conclusao das impressoras
+    // Aguardar conclusão das impressoras
     for (auto& t : impressoras) t.join();
 
     gerar_relatorio();
