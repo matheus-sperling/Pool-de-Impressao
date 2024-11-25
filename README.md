@@ -1,39 +1,23 @@
-# Pool de Impressão
+# Simulador de Pool de Impressão
 
-Este projeto é um simulador de pool de impressão, desenvolvido em C++. Ele gerencia a fila de impressão de múltiplos processos, priorizando os pedidos de impressão de acordo com a prioridade definida pelo usuário.
+Este projeto é um simulador de um pool de impressão, implementado em C++ utilizando programação multithread.
+
+## Descrição
+
+O programa simula um ambiente onde múltiplos processos geram pedidos de impressão e múltiplas impressoras processam esses pedidos. Ele utiliza threads, mutexes, variáveis de condição e filas de prioridade para sincronizar o acesso aos recursos compartilhados.
 
 ## Funcionalidades
 
-- **Gerenciamento de Fila de Impressão**: Os pedidos de impressão são organizados em uma fila de prioridades.
-- **Prioridades de Impressão**: Cada pedido de impressão pode ter uma prioridade de 1 a 5, onde 5 é a mais alta.
-- **Relatório de Impressão**: Gera um relatório final com a quantidade total de páginas impressas por impressora e uma lista de documentos impressos.
+- Processos geradores de pedidos de impressão com número aleatório de páginas e prioridades.
+- Spool de impressão que gerencia os pedidos em uma fila de prioridade.
+- Impressoras que processam os pedidos do spool.
+- Geração de relatório final detalhado com as informações de cada impressão.
 
-## Como Usar
+## Compilação
 
-### Configuração Inicial
+Certifique-se de ter um compilador C++ com suporte a C++11 ou superior.
 
-- Número de processos
-- Número de impressoras
-- Capacidade máxima do buffer
-- Tempo de impressão por página (em milissegundos)
-- Número máximo de pedidos por processo
-- Número de páginas por pedido
-
-### Definição de Prioridades
-
-Defina a prioridade de cada pedido de impressão para cada processo.
-
-### Simulação
-
-O programa simula a adição de pedidos à fila de impressão e o processamento dos mesmos pelas impressoras.
-
-### Relatório Final
-
-Ao final da simulação, é gerado um relatório detalhado das impressões realizadas.
-
-## Compilação e Execução
-
-Para compilar e executar o programa, utilize um compilador que suporte C++11 ou superior.
+Para compilar o programa, execute:
 
 g++ -std=c++11 -o pool_de_impressao main.cpp -pthread
 ./pool_de_impressao
