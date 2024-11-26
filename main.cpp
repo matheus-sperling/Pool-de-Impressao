@@ -22,18 +22,21 @@ std::mutex last_request_mutex;
 std::chrono::system_clock::time_point last_request_time;
 
 // Estrutura que define um pedido de impressao
-struct Pedido {
-    int id; // Identificador unico do pedido
-    std::string nome_documento; // Nome do documento a ser impresso
-    int num_paginas; // Numero de paginas do documento
-    int prioridade; // Prioridade do pedido (1 a 5)
-    int id_processo; // Identificador do processo que gerou o pedido
+struct Pedido
+{
+    int id;                                                 // Identificador unico do pedido
+    std::string nome_documento;                             // Nome do documento a ser impresso
+    int num_paginas;                                        // Numero de paginas do documento
+    int prioridade;                                         // Prioridade do pedido (1 a 5)
+    int id_processo;                                        // Identificador do processo que gerou o pedido
     std::chrono::system_clock::time_point hora_solicitacao; // Horario da solicitacao
 
     // Sobrecarga do operador < para definir a ordem de prioridade na fila
-    bool operator<(const Pedido &outro) const {
+    bool operator<(const Pedido &outro) const
+    {
         // Maior prioridade (valor maior) tem precedencia
-        if (prioridade == outro.prioridade) {
+        if (prioridade == outro.prioridade)
+        {
             // Se as prioridades forem iguais, o pedido mais antigo tem precedencia
             return hora_solicitacao > outro.hora_solicitacao;
         }
@@ -42,29 +45,32 @@ struct Pedido {
 };
 
 // Estrutura que armazena os dados de um pedido processado
-struct RegistroImpressao {
-    std::string nome_documento; // Nome do documento
-    int num_paginas; // Numero de paginas
-    int id_processo; // Identificador do processo solicitante
-    int id_impressora; // Identificador da impressora utilizada
+struct RegistroImpressao
+{
+    std::string nome_documento;                             // Nome do documento
+    int num_paginas;                                        // Numero de paginas
+    int id_processo;                                        // Identificador do processo solicitante
+    int id_impressora;                                      // Identificador da impressora utilizada
     std::chrono::system_clock::time_point hora_solicitacao; // Horario da solicitacao
-    std::chrono::system_clock::time_point hora_inicio; // Horario de inicio da impressao
-    std::chrono::milliseconds tempo_total; // Tempo total de impressao
-    int prioridade; // Prioridade do pedido
+    std::chrono::system_clock::time_point hora_inicio;      // Horario de inicio da impressao
+    std::chrono::milliseconds tempo_total;                  // Tempo total de impressao
+    int prioridade;                                         // Prioridade do pedido
 };
 
 // Contador global de processos ativos
 std::atomic<int> processos_ativos(0);
 
 // Classe que gerencia o spool de impressao
-class Spool {
+class Spool
+{
 public:
     // Construtor que define a capacidade maxima do buffer
     Spool(int capacidade_buffer)
         : capacidade(capacidade_buffer), encerrar(false) {}
 
     // Funcao para adicionar um pedido ao buffer
-    bool add_pedido(const Pedido &pedido) {
+    bool add_pedido(const Pedido &pedido)
+    {
         std::unique_lock<std::mutex> lock(mutex_buffer);
         // Atualiza o tempo da ultima solicitacao
         {
@@ -72,9 +78,9 @@ public:
             last_request_time = std::chrono::system_clock::now();
         }
         // Tenta adicionar o pedido ao buffer, esperando por ate 1 segundo
-        if (!cond_var_buffer.wait_for(lock, std::chrono::seconds(1), [this]() {
-            return buffer.size() < capacidade || encerrar.load();
-        })) {
+        if (!cond_var_buffer.wait_for(lock, std::chrono::seconds(1), [this]()
+                                      { return buffer.size() < capacidade || encerrar.load(); }))
+        {
             // Timeout: nao houve espaco disponivel
             {
                 std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
@@ -96,30 +102,32 @@ public:
         }
 
         cond_var_buffer.notify_one(); // Notifica que um novo pedido foi adicionado
-        return true; // Indica que o pedido foi adicionado com sucesso
+        return true;                  // Indica que o pedido foi adicionado com sucesso
     }
 
     // Funcao para obter um pedido do buffer
-    bool get_pedido(Pedido &pedido) {
+    bool get_pedido(Pedido &pedido)
+    {
         std::unique_lock<std::mutex> lock(mutex_buffer);
         // Espera ate que haja um pedido na fila ou que o sistema esteja encerrando
-        cond_var_buffer.wait(lock, [this]() {
-            return !buffer.empty() || encerrar.load();
-        });
+        cond_var_buffer.wait(lock, [this]()
+                             { return !buffer.empty() || encerrar.load(); });
 
-        if (buffer.empty()) {
+        if (buffer.empty())
+        {
             // Se a fila esta vazia e o sistema esta encerrando
             return false; // Indica que nao ha mais pedidos para processar
         }
 
-        pedido = buffer.top(); // Obtem o pedido de maior prioridade
-        buffer.pop(); // Remove o pedido da fila
+        pedido = buffer.top();        // Obtem o pedido de maior prioridade
+        buffer.pop();                 // Remove o pedido da fila
         cond_var_buffer.notify_one(); // Notifica que um pedido foi removido
         return true;
     }
 
     // Funcao que espera ate que o sistema esteja inativo e entao sinaliza o encerramento
-    void wait_until_finished() {
+    void wait_until_finished()
+    {
         // Inicializa o tempo da ultima solicitacao como o tempo atual
         {
             std::lock_guard<std::mutex> time_lock(last_request_mutex);
@@ -134,22 +142,25 @@ public:
     }
 
     // Funcao para sinalizar o encerramento do spool (fallback)
-    void encerrar_spool() {
+    void encerrar_spool()
+    {
         encerrar.store(true);
         cond_var_buffer.notify_all();
     }
 
 private:
-    std::priority_queue<Pedido> buffer; // Fila de prioridade para os pedidos
-    std::mutex mutex_buffer; // Mutex para proteger o acesso ao buffer
+    std::priority_queue<Pedido> buffer;      // Fila de prioridade para os pedidos
+    std::mutex mutex_buffer;                 // Mutex para proteger o acesso ao buffer
     std::condition_variable cond_var_buffer; // Variavel de condicao para sincronizacao
-    int capacidade; // Capacidade maxima do buffer
-    std::atomic<bool> encerrar; // Flag para indicar o encerramento do sistema
+    int capacidade;                          // Capacidade maxima do buffer
+    std::atomic<bool> encerrar;              // Flag para indicar o encerramento do sistema
 
     // Funcao de monitoramento de inatividade
-    void monitorar_inatividade() {
+    void monitorar_inatividade()
+    {
         const int tempo_limite = 30; // Tempo limite de inatividade em segundos
-        while (!encerrar.load()) {
+        while (!encerrar.load())
+        {
             std::this_thread::sleep_for(std::chrono::seconds(1)); // Verifica a cada segundo
             std::chrono::system_clock::time_point agora = std::chrono::system_clock::now();
             std::chrono::system_clock::time_point ultimo_pedido;
@@ -158,15 +169,18 @@ private:
                 ultimo_pedido = last_request_time;
             }
             auto duracao = std::chrono::duration_cast<std::chrono::seconds>(agora - ultimo_pedido).count();
-            if (duracao >= tempo_limite) { // Verifica se passaram 30 segundos
+            if (duracao >= tempo_limite)
+            { // Verifica se passaram 30 segundos
                 {
                     std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
                     std::cout << "\nNenhuma nova solicitacao de impressao recebida por 30 segundos. Sinalizando encerramento.\n\n";
                 }
-                encerrar.store(true); // Sinaliza para as impressoras encerrarem
+                encerrar.store(true);         // Sinaliza para as impressoras encerrarem
                 cond_var_buffer.notify_all(); // Notifica todas as impressoras
                 break;
-            } else {
+            }
+            else
+            {
                 int tempo_restante = tempo_limite - static_cast<int>(duracao);
                 {
                     std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
@@ -178,7 +192,8 @@ private:
 };
 
 // Classe que representa uma Impressora
-class Impressora {
+class Impressora
+{
 public:
     // Construtor que inicializa a impressora com seu ID, referencia ao spool, registros, contador de paginas e tempo por pagina
     Impressora(int id, Spool &spool, std::vector<RegistroImpressao> &registros,
@@ -189,35 +204,40 @@ public:
           tempo_por_pagina_ms(tempo_por_pagina_ms) {}
 
     // Deleta o construtor de copia e o operador de atribuicao para evitar copias
-    Impressora(const Impressora&) = delete;
-    Impressora& operator=(const Impressora&) = delete;
+    Impressora(const Impressora &) = delete;
+    Impressora &operator=(const Impressora &) = delete;
 
     // Funcao que inicia a thread da impressora
-    void start() {
+    void start()
+    {
         thread_impressora = std::thread(&Impressora::run, this);
     }
 
     // Funcao que espera a thread da impressora terminar
-    void join() {
+    void join()
+    {
         if (thread_impressora.joinable())
             thread_impressora.join();
     }
 
 private:
-    int id_impressora; // Identificador da impressora
-    Spool &spool_ref; // Referencia ao spool de impressao
-    std::vector<RegistroImpressao> &registros_ref; // Referencia aos registros de impressao
+    int id_impressora;                                        // Identificador da impressora
+    Spool &spool_ref;                                         // Referencia ao spool de impressao
+    std::vector<RegistroImpressao> &registros_ref;            // Referencia aos registros de impressao
     std::unordered_map<int, int> &paginas_por_impressora_ref; // Referencia ao contador de paginas por impressora
-    std::mutex &registro_mutex_ref; // Referencia ao mutex para registrar impressoes
-    int tempo_por_pagina_ms; // Tempo de impressao por pagina
-    std::thread thread_impressora; // Thread da impressora
+    std::mutex &registro_mutex_ref;                           // Referencia ao mutex para registrar impressoes
+    int tempo_por_pagina_ms;                                  // Tempo de impressao por pagina
+    std::thread thread_impressora;                            // Thread da impressora
 
     // Funcao que simula o funcionamento da impressora
-    void run() {
-        while (true) {
+    void run()
+    {
+        while (true)
+        {
             Pedido pedido;
             bool existe_pedido = spool_ref.get_pedido(pedido);
-            if (!existe_pedido) {
+            if (!existe_pedido)
+            {
                 // Nenhum pedido para processar e o spool esta encerrando
                 std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
                 std::cout << "Impressora " << id_impressora << " esta encerrando.\n\n";
@@ -271,9 +291,11 @@ private:
 };
 
 // Funcao auxiliar para ler e validar entradas inteiras
-int ler_entrada(const std::string &prompt, int minimo) {
+int ler_entrada(const std::string &prompt, int minimo)
+{
     int valor;
-    while (true) {
+    while (true)
+    {
         {
             std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
             std::cout << prompt;
@@ -281,8 +303,9 @@ int ler_entrada(const std::string &prompt, int minimo) {
         std::cin >> valor;
 
         // Verifica se a leitura foi bem-sucedida
-        if (std::cin.fail()) {
-            std::cin.clear(); // Limpa o estado de erro
+        if (std::cin.fail())
+        {
+            std::cin.clear();                                                   // Limpa o estado de erro
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Descarte a entrada invalida
             {
                 std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
@@ -295,9 +318,12 @@ int ler_entrada(const std::string &prompt, int minimo) {
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
         // Verifica se o valor atende ao criterio minimo
-        if (valor >= minimo) {
+        if (valor >= minimo)
+        {
             break;
-        } else {
+        }
+        else
+        {
             {
                 std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
                 std::cout << "Valor invalido! O valor deve ser no minimo " << minimo << ".\n\n";
@@ -308,7 +334,8 @@ int ler_entrada(const std::string &prompt, int minimo) {
 }
 
 // Funcao para coletar os dados de entrada do usuario
-void coletar_dados(int &num_processos, int &num_impressoras, int &capacidade_buffer, int &tempo_por_pagina_ms) {
+void coletar_dados(int &num_processos, int &num_impressoras, int &capacidade_buffer, int &tempo_por_pagina_ms)
+{
     {
         std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
         std::cout << "Bem-vindo ao Simulador de Pool de Impressao!\n\n";
@@ -333,48 +360,54 @@ void coletar_dados(int &num_processos, int &num_impressoras, int &capacidade_buf
 }
 
 // Classe que representa um processo que gera pedidos de impressao
-class Processo {
+class Processo
+{
 public:
     // Construtor que inicializa o processo com seu ID, numero maximo de pedidos e referencia ao spool
     Processo(int pid, int max_pedidos, Spool &spool)
         : id(pid), max_pedidos(max_pedidos), spool_ref(spool), pedidos_enviados(0) {}
-    
+
     // Deleta o construtor de copia e o operador de atribuicao para evitar copias
-    Processo(const Processo&) = delete;
-    Processo& operator=(const Processo&) = delete;
+    Processo(const Processo &) = delete;
+    Processo &operator=(const Processo &) = delete;
 
     // Funcao para iniciar a thread do processo
-    void start() {
+    void start()
+    {
         thread_process = std::thread(&Processo::run, this);
     }
 
     // Funcao para esperar a thread do processo terminar
-    void join() {
+    void join()
+    {
         if (thread_process.joinable())
             thread_process.join();
     }
 
 private:
-    int id; // Identificador do processo
-    int max_pedidos; // Numero maximo de pedidos que o processo pode gerar
-    Spool &spool_ref; // Referencia ao spool de impressao
-    int pedidos_enviados; // Contador de pedidos enviados
+    int id;                     // Identificador do processo
+    int max_pedidos;            // Numero maximo de pedidos que o processo pode gerar
+    Spool &spool_ref;           // Referencia ao spool de impressao
+    int pedidos_enviados;       // Contador de pedidos enviados
     std::thread thread_process; // Thread do processo
 
     // Funcao que executa o processo, gerando pedidos de impressao
-    void run() {
-        try {
+    void run()
+    {
+        try
+        {
             // Inicializacao do gerador de numeros aleatorios
             std::random_device rd;
             std::mt19937 gen(rd());
-            std::uniform_int_distribution<> paginas_dist(1, 10); // Distribuicao para numero de paginas
+            std::uniform_int_distribution<> paginas_dist(1, 10);   // Distribuicao para numero de paginas
             std::uniform_int_distribution<> prioridade_dist(1, 5); // Distribuicao para prioridade
 
-            while (pedidos_enviados < max_pedidos) {
+            while (pedidos_enviados < max_pedidos)
+            {
                 Pedido pedido;
                 pedido.id = pedidos_enviados++;
                 pedido.nome_documento = "arquivo_" + std::to_string(id) + "_" + std::to_string(pedido.id);
-                pedido.num_paginas = paginas_dist(gen); // Gera um numero aleatorio de paginas
+                pedido.num_paginas = paginas_dist(gen);   // Gera um numero aleatorio de paginas
                 pedido.prioridade = prioridade_dist(gen); // Gera uma prioridade aleatoria
                 pedido.id_processo = id;
                 pedido.hora_solicitacao = std::chrono::system_clock::now(); // Registra o horario da solicitacao
@@ -389,7 +422,8 @@ private:
                 }
 
                 bool sucesso = spool_ref.add_pedido(pedido); // Adiciona o pedido ao spool
-                if (!sucesso) {
+                if (!sucesso)
+                {
                     // Opcional: registrar que o pedido foi descartado
                     {
                         std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
@@ -399,11 +433,13 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Espera antes de gerar o proximo pedido
             }
         }
-        catch (const std::exception &e) {
+        catch (const std::exception &e)
+        {
             std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
             std::cerr << "Erro no processo " << id << ": " << e.what() << "\n";
         }
-        catch (...) {
+        catch (...)
+        {
             std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
             std::cerr << "Erro desconhecido no processo " << id << ".\n";
         }
@@ -416,7 +452,8 @@ private:
 };
 
 // Funcao auxiliar para converter um time_point para string formatada
-std::string time_point_to_string(const std::chrono::system_clock::time_point &tp) {
+std::string time_point_to_string(const std::chrono::system_clock::time_point &tp)
+{
     std::time_t t = std::chrono::system_clock::to_time_t(tp);
     std::tm tm;
 #ifdef _WIN32
@@ -430,7 +467,8 @@ std::string time_point_to_string(const std::chrono::system_clock::time_point &tp
 }
 
 // Funcao para gerar o relatorio final de impressao
-void gerar_relatorio(const std::vector<RegistroImpressao> &registros, const std::unordered_map<int, int> &paginas_por_impressora) {
+void gerar_relatorio(const std::vector<RegistroImpressao> &registros, const std::unordered_map<int, int> &paginas_por_impressora)
+{
     {
         std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
         std::cout << "-----------------------------------------\n";
@@ -438,7 +476,8 @@ void gerar_relatorio(const std::vector<RegistroImpressao> &registros, const std:
 
         // Resumo de impressao por impressora
         std::cout << "Resumo de Impressao por Impressora:\n";
-        for (const auto &[impressora, paginas] : paginas_por_impressora) {
+        for (const auto &[impressora, paginas] : paginas_por_impressora)
+        {
             std::cout << "  Impressora " << impressora << " -> Total de paginas impressas: " << paginas << "\n";
         }
 
@@ -446,7 +485,8 @@ void gerar_relatorio(const std::vector<RegistroImpressao> &registros, const std:
     }
 
     // Lista detalhada de cada documento processado
-    for (const auto &registro : registros) {
+    for (const auto &registro : registros)
+    {
         std::lock_guard<std::mutex> cout_lock_guard(cout_mutex);
         std::cout << "-----------------------------------------\n";
         std::cout << "Documento         : " << registro.nome_documento << "\n";
@@ -461,7 +501,8 @@ void gerar_relatorio(const std::vector<RegistroImpressao> &registros, const std:
     }
 }
 
-int main() {
+int main()
+{
     int num_processos, num_impressoras, capacidade_buffer, tempo_por_pagina_ms;
 
     // Coleta dos dados de entrada do usuario
@@ -471,19 +512,21 @@ int main() {
 
     Spool spool(capacidade_buffer); // Cria o spool com a capacidade definida
 
-    std::vector<RegistroImpressao> registros; // Vetor para armazenar os registros de impressao
+    std::vector<RegistroImpressao> registros;            // Vetor para armazenar os registros de impressao
     std::unordered_map<int, int> paginas_por_impressora; // Mapa para contar paginas por impressora
-    std::mutex registro_mutex; // Mutex para proteger o acesso aos registros
+    std::mutex registro_mutex;                           // Mutex para proteger o acesso aos registros
 
     // Inicializa o contador de paginas por impressora
-    for (int i = 1; i <= num_impressoras; ++i) {
+    for (int i = 1; i <= num_impressoras; ++i)
+    {
         paginas_por_impressora[i] = 0;
     }
 
     // Cria e inicia os processos que geram pedidos de impressao
     std::vector<std::unique_ptr<Processo>> processos;
     processos.reserve(num_processos); // Reserva espaco para evitar realocacoes
-    for (int i = 1; i <= num_processos; ++i) {
+    for (int i = 1; i <= num_processos; ++i)
+    {
         processos.emplace_back(std::make_unique<Processo>(i, 5, spool)); // Cada processo gera 5 pedidos
         processos.back()->start();
     }
@@ -491,7 +534,8 @@ int main() {
     // Cria e inicia as impressoras usando std::unique_ptr
     std::vector<std::unique_ptr<Impressora>> impressoras;
     impressoras.reserve(num_impressoras); // Reserva espaco para evitar realocacoes
-    for (int i = 1; i <= num_impressoras; ++i) {
+    for (int i = 1; i <= num_impressoras; ++i)
+    {
         impressoras.emplace_back(std::make_unique<Impressora>(i, spool, registros, paginas_por_impressora, registro_mutex, tempo_por_pagina_ms));
         impressoras.back()->start();
     }
@@ -500,12 +544,14 @@ int main() {
     spool.wait_until_finished();
 
     // Aguarda o termino de todas as threads dos processos
-    for (auto &processo : processos) {
+    for (auto &processo : processos)
+    {
         processo->join();
     }
 
     // Aguarda o termino de todas as threads das impressoras
-    for (auto &impressora : impressoras) {
+    for (auto &impressora : impressoras)
+    {
         impressora->join();
     }
 
